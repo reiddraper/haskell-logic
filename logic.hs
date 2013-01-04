@@ -4,35 +4,40 @@ module Main where
 -- Data declarations
 ------------------------------------------------------------------------------
 
-data UnaryOp = Not deriving (Show)
-data BinaryOp = And | Or deriving (Show)
+data UnaryOp = Not
+data BinaryOp = And | Or
+type Variable = Char
 
 data Expression = Bool Bool
+                | Variable Variable
                 | UnaryExpr (UnaryOp, Expression)
                 | BinaryExpr (BinaryOp, Expression, Expression)
+
+instance Show UnaryOp where
+    show _ = "not"
+
+instance Show BinaryOp where
+    show And = "and"
+    show Or = "or"
+
+instance Show Expression where
+    show (Bool b) = show b
+    show (Variable v) = show v
+    show (UnaryExpr (op, expr)) = concat ["(", show op, " ", show expr, ")"]
+    show (BinaryExpr (op, expr1, expr2)) = concat ["(", show expr1, " ",
+                                                   show op, " ", show expr2, ")"]
 
 ------------------------------------------------------------------------------
 -- Interpreter
 ------------------------------------------------------------------------------
 
-operate_binary :: BinaryOp -> Bool -> Bool -> Bool
-operate_binary And a b = a && b
-operate_binary Or a b = a || b
-
-operate_unary :: UnaryOp -> Bool -> Bool
-operate_unary Not a = not a
-
-solve :: Expression -> Bool
-solve (Bool b) = b
-solve (UnaryExpr (operation, a)) = operate_unary operation (solve a)
-solve (BinaryExpr (operation, a, b)) = operate_binary operation (solve a) (solve b)
 
 ------------------------------------------------------------------------------
 -- Main
 ------------------------------------------------------------------------------
 
 expr1 :: Expression
-expr1 = BinaryExpr (Or, Bool True, Bool False)
+expr1 = BinaryExpr (Or, Bool True, (UnaryExpr (Not, (Bool False))))
 
 expr2 :: Expression
 expr2 = BinaryExpr (And, Bool True, Bool False)
@@ -44,4 +49,4 @@ expr :: Expression
 expr = UnaryExpr (Not, expr3)
 
 main :: IO ()
-main = print (solve expr)
+main = print expr
