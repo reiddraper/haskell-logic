@@ -6,7 +6,7 @@ module Main where
 
 data UnaryOp = Not
 data BinaryOp = And | Or
-type Variable = Char
+data Variable = Var Char
 
 data Expression = Bool Bool
                 | Variable Variable
@@ -19,6 +19,9 @@ instance Show UnaryOp where
 instance Show BinaryOp where
     show And = "and"
     show Or = "or"
+
+instance Show Variable where
+    show (Var c) = [c]
 
 instance Show Expression where
     show (Bool b) = show b
@@ -37,7 +40,7 @@ instance Show Expression where
 ------------------------------------------------------------------------------
 
 expr1 :: Expression
-expr1 = BinaryExpr (Or, Bool True, (UnaryExpr (Not, (Bool False))))
+expr1 = BinaryExpr (Or, Variable (Var 'A'), (UnaryExpr (Not, Variable (Var 'B'))))
 
 expr2 :: Expression
 expr2 = BinaryExpr (And, Bool True, Bool False)
