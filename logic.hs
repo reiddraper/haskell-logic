@@ -51,9 +51,11 @@ instance Arbitrary a => Arbitrary (Expression a) where
 
 expro :: Arbitrary a => Int -> Gen (Expression a)
 expro 0 = liftM Leaf arbitrary
-expro n = oneof [liftM2 UnaryExpr arbitrary subexpr,
-                 liftM3 BinaryExpr arbitrary subexpr subexpr]
-            where subexpr = expro (n `div` 2)
+expro n = oneof [liftM2 UnaryExpr arbitrary (subexpro n),
+                 liftM3 BinaryExpr arbitrary (subexpro n) (subexpro n)]
+
+subexpro :: Arbitrary a => Int -> Gen (Expression a)
+subexpro n = expro (n `div` 2)
 
 instance Arbitrary Variable where
     arbitrary = liftM Var $ choose ('\97', '\101')
@@ -94,11 +96,21 @@ isNNF (UnaryExpr Not (Leaf _))          = True
 isNNF (UnaryExpr Not _)                 = False
 isNNF (BinaryExpr _ expr1 expr2)        = (isNNF expr1) && (isNNF expr2)
 
+nnf :: Expression a -> Expression a
+nnf = until isNNF (deMorgan . removeDoubleNegation)
+
 removeDoubleNegation :: Expression a -> Expression a
 removeDoubleNegation l@(Leaf _) = l
 removeDoubleNegation (UnaryExpr Not (UnaryExpr Not expr)) = removeDoubleNegation expr
 removeDoubleNegation (UnaryExpr op expr) = UnaryExpr op (removeDoubleNegation expr)
-removeDoubleNegation (BinaryExpr op expr1 expr2) = (BinaryExpr op (removeDoubleNegation expr1) (removeDoubleNegation expr2))
+removeDoubleNegation (BinaryExpr op expr1 expr2) = BinaryExpr op (removeDoubleNegation expr1) (removeDoubleNegation expr2)
+
+deMorgan :: Expression a -> Expression a
+deMorgan l@(Leaf _) = l
+deMorgan (UnaryExpr Not (BinaryExpr And expr1 expr2)) = BinaryExpr Or (deMorgan (UnaryExpr Not expr1)) (deMorgan (UnaryExpr Not expr2))
+deMorgan (UnaryExpr Not (BinaryExpr Or expr1 expr2)) = BinaryExpr And (deMorgan (UnaryExpr Not expr1)) (deMorgan (UnaryExpr Not expr2))
+deMorgan (UnaryExpr Not expr) = UnaryExpr Not (deMorgan expr)
+deMorgan (BinaryExpr op expr1 expr2) = BinaryExpr op (deMorgan expr1) (deMorgan expr2)
 
 ------------------------------------------------------------------------------
 -- Interpreter
