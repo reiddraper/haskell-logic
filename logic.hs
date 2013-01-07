@@ -1,9 +1,10 @@
-module Main where
-import Control.Monad (replicateM)
+module Logic where
+import Control.Monad (replicateM, liftM, liftM2, liftM3)
 import Data.Monoid
 import Data.Foldable (Foldable, foldMap)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Test.QuickCheck
 
 ------------------------------------------------------------------------------
 -- Data declarations
@@ -14,8 +15,8 @@ data BinaryOp = And | Or
 newtype Variable = Var Char deriving (Eq, Ord)
 
 data Expression a = Leaf a
-                    | UnaryExpr (UnaryOp, Expression a)
-                    | BinaryExpr (BinaryOp, Expression a, Expression a)
+                    | UnaryExpr UnaryOp (Expression a)
+                    | BinaryExpr BinaryOp (Expression a) (Expression a)
 
 instance Show UnaryOp where
     show _ = "not"
@@ -29,14 +30,33 @@ instance Show Variable where
 
 instance Show a => Show (Expression a) where
     show (Leaf l) = show l
-    show (UnaryExpr (op, expr)) = concat ["(", show op, " ", show expr, ")"]
-    show (BinaryExpr (op, expr1, expr2)) = concat ["(", show expr1, " ",
-                                                   show op, " ", show expr2, ")"]
+    show (UnaryExpr op expr) = concat ["(", show op, " ", show expr, ")"]
+    show (BinaryExpr op expr1 expr2) = concat ["(", show expr1, " ",
+                                               show op, " ", show expr2, ")"]
 
 instance Foldable Expression where
     foldMap f (Leaf v) = f v
-    foldMap f (UnaryExpr (_, expr)) = foldMap f expr
-    foldMap f (BinaryExpr (_, expr1, expr2)) = (foldMap f expr1) `mappend` (foldMap f expr2)
+    foldMap f (UnaryExpr _ expr) = foldMap f expr
+    foldMap f (BinaryExpr _ expr1 expr2) = (foldMap f expr1) `mappend` (foldMap f expr2)
+
+instance Arbitrary UnaryOp where
+    arbitrary = return Not
+
+instance Arbitrary BinaryOp where
+    arbitrary = oneof [return And, return Or]
+
+instance Arbitrary a => Arbitrary (Expression a) where
+    arbitrary = sized expro
+
+
+expro :: Arbitrary a => Int -> Gen (Expression a)
+expro 0 = liftM Leaf arbitrary
+expro n = oneof [liftM2 UnaryExpr arbitrary subexpr,
+                 liftM3 BinaryExpr arbitrary subexpr subexpr]
+            where subexpr = expro (n `div` 2)
+
+instance Arbitrary Variable where
+    arbitrary = liftM Var $ choose ('\97', '\101')
 
 type Mapping = Map.Map Variable Bool
 type VarExpr = Expression Variable
@@ -53,8 +73,8 @@ solveWithMapping expr mapping = solve (replace expr mapping)
 
 replace :: VarExpr -> Mapping -> Expression Bool
 replace (Leaf v) m = Leaf (Map.findWithDefault True v m)
-replace (UnaryExpr (op, expr)) m = UnaryExpr (op, replace expr m)
-replace (BinaryExpr (op, expr1, expr2)) m = BinaryExpr (op, (replace expr1 m), (replace expr2 m))
+replace (UnaryExpr op expr) m = UnaryExpr op (replace expr m)
+replace (BinaryExpr op expr1 expr2) m = BinaryExpr op (replace expr1 m) (replace expr2 m)
 
 mappings :: VarExpr -> [Mapping]
 mappings expr = let vs = Set.toList $ variables expr
@@ -63,6 +83,22 @@ mappings expr = let vs = Set.toList $ variables expr
 
 variables :: VarExpr -> Set.Set Variable
 variables = foldMap Set.singleton
+
+------------------------------------------------------------------------------
+-- Normal Forms
+------------------------------------------------------------------------------
+
+isNNF :: Expression a -> Bool
+isNNF (Leaf _) = True
+isNNF (UnaryExpr Not (Leaf _))          = True
+isNNF (UnaryExpr Not _)                 = False
+isNNF (BinaryExpr _ expr1 expr2)        = (isNNF expr1) && (isNNF expr2)
+
+removeDoubleNegation :: Expression a -> Expression a
+removeDoubleNegation l@(Leaf _) = l
+removeDoubleNegation (UnaryExpr Not (UnaryExpr Not expr)) = removeDoubleNegation expr
+removeDoubleNegation (UnaryExpr op expr) = UnaryExpr op (removeDoubleNegation expr)
+removeDoubleNegation (BinaryExpr op expr1 expr2) = (BinaryExpr op (removeDoubleNegation expr1) (removeDoubleNegation expr2))
 
 ------------------------------------------------------------------------------
 -- Interpreter
@@ -77,24 +113,24 @@ operate_unary Not a = not a
 
 solve :: Expression Bool -> Bool
 solve (Leaf b) = b
-solve (UnaryExpr (operation, a)) = operate_unary operation (solve a)
-solve (BinaryExpr (operation, a, b)) = operate_binary operation (solve a) (solve b)
+solve (UnaryExpr operation  a) = operate_unary operation (solve a)
+solve (BinaryExpr operation a b) = operate_binary operation (solve a) (solve b)
 
 ------------------------------------------------------------------------------
 -- Main
 ------------------------------------------------------------------------------
 
-expr1 :: VarExpr
-expr1 = BinaryExpr (Or, Leaf (Var 'A'), (UnaryExpr (Not, Leaf (Var 'B'))))
+ex1 :: VarExpr
+ex1 = BinaryExpr Or (Leaf (Var 'A')) (UnaryExpr Not (Leaf (Var 'B')))
 
-expr2 :: VarExpr
-expr2 = BinaryExpr (And, Leaf (Var 'A'), Leaf (Var 'B'))
+ex2 :: VarExpr
+ex2 = BinaryExpr And (Leaf (Var 'A')) (Leaf (Var 'B'))
 
-expr3 :: VarExpr
-expr3 = BinaryExpr (And, expr1, expr2)
+ex3 :: VarExpr
+ex3 = BinaryExpr And ex1 ex2
 
-expr :: VarExpr
-expr = UnaryExpr (Not, expr3)
+ex :: VarExpr
+ex = UnaryExpr Not ex3
 
 main :: IO ()
-main = print $ truthTable expr
+main = print $ truthTable ex
