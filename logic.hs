@@ -37,7 +37,7 @@ instance Show a => Show (Expression a) where
 instance Foldable Expression where
     foldMap f (Leaf v) = f v
     foldMap f (UnaryExpr _ expr) = foldMap f expr
-    foldMap f (BinaryExpr _ expr1 expr2) = (foldMap f expr1) `mappend` (foldMap f expr2)
+    foldMap f (BinaryExpr _ expr1 expr2) = foldMap f expr1 `mappend` foldMap f expr2
 
 instance Arbitrary UnaryOp where
     arbitrary = return Not
@@ -64,6 +64,24 @@ type Mapping = Map.Map Variable Bool
 type VarExpr = Expression Variable
 
 ------------------------------------------------------------------------------
+-- Helpers
+------------------------------------------------------------------------------
+
+oppositeBinary :: BinaryOp -> BinaryOp
+oppositeBinary And = Or
+oppositeBinary Or = And
+
+equivalent :: VarExpr -> VarExpr -> Bool
+equivalent a b = equivalentVars a b && equivalentTruth a b
+
+equivalentVars :: VarExpr -> VarExpr -> Bool
+equivalentVars a b = variables a == variables b
+
+equivalentTruth :: VarExpr -> VarExpr -> Bool
+equivalentTruth a b = let maps = mappings a
+                      in solveWithMappings a maps == solveWithMappings b maps
+
+------------------------------------------------------------------------------
 -- Truth table
 ------------------------------------------------------------------------------
 
@@ -72,6 +90,9 @@ truthTable expr = map (solveWithMapping expr) $ mappings expr
 
 solveWithMapping :: VarExpr -> Mapping -> Bool
 solveWithMapping expr mapping = solve (replace expr mapping)
+
+solveWithMappings :: VarExpr -> [Mapping] -> [Bool]
+solveWithMappings expr = map (solveWithMapping expr)
 
 replace :: VarExpr -> Mapping -> Expression Bool
 replace (Leaf v) m = Leaf (Map.findWithDefault True v m)
@@ -90,11 +111,13 @@ variables = foldMap Set.singleton
 -- Normal Forms
 ------------------------------------------------------------------------------
 
+-- Negation Normal Form
+
 isNNF :: Expression a -> Bool
 isNNF (Leaf _) = True
 isNNF (UnaryExpr Not (Leaf _))          = True
 isNNF (UnaryExpr Not _)                 = False
-isNNF (BinaryExpr _ expr1 expr2)        = (isNNF expr1) && (isNNF expr2)
+isNNF (BinaryExpr _ expr1 expr2)        = isNNF expr1 && isNNF expr2
 
 nnf :: Expression a -> Expression a
 nnf = until isNNF (deMorgan . removeDoubleNegation)
@@ -107,26 +130,46 @@ removeDoubleNegation (BinaryExpr op expr1 expr2) = BinaryExpr op (removeDoubleNe
 
 deMorgan :: Expression a -> Expression a
 deMorgan l@(Leaf _) = l
-deMorgan (UnaryExpr Not (BinaryExpr And expr1 expr2)) = BinaryExpr Or (deMorgan (UnaryExpr Not expr1)) (deMorgan (UnaryExpr Not expr2))
-deMorgan (UnaryExpr Not (BinaryExpr Or expr1 expr2)) = BinaryExpr And (deMorgan (UnaryExpr Not expr1)) (deMorgan (UnaryExpr Not expr2))
+deMorgan (UnaryExpr Not (BinaryExpr op expr1 expr2)) = BinaryExpr (oppositeBinary op) (deMorgan (UnaryExpr Not expr1)) (deMorgan (UnaryExpr Not expr2))
 deMorgan (UnaryExpr Not expr) = UnaryExpr Not (deMorgan expr)
 deMorgan (BinaryExpr op expr1 expr2) = BinaryExpr op (deMorgan expr1) (deMorgan expr2)
+
+-- Conjunctive Normal Form
+
+isCNF :: Expression a -> Bool
+isCNF (Leaf _) = True
+isCNF (UnaryExpr Not (Leaf _))          = True
+isCNF (UnaryExpr Not _)                 = False
+isCNF (BinaryExpr Or (Leaf _) (Leaf _)) = True
+isCNF (BinaryExpr Or _ _)               = False
+isCNF (BinaryExpr And expr1 expr2)      = isCNF expr1 && isCNF expr2
+
+cnf :: Expression a -> Expression a
+cnf = until isCNF distributeDisjunction . nnf
+
+distributeDisjunction :: Expression a -> Expression a
+distributeDisjunction t@(Leaf _)                            = t
+distributeDisjunction t@(UnaryExpr _ _)                     = t
+distributeDisjunction t@(BinaryExpr Or (Leaf _) (Leaf _))   = t
+distributeDisjunction (BinaryExpr Or l@(Leaf _) (BinaryExpr And expr1 expr2)) = BinaryExpr And (BinaryExpr Or l expr1) (BinaryExpr Or l expr2)
+distributeDisjunction (BinaryExpr Or (BinaryExpr And expr1 expr2) l@(Leaf _)) = BinaryExpr And (BinaryExpr Or l expr1) (BinaryExpr Or l expr2)
+distributeDisjunction (BinaryExpr op expr1 expr2)           = BinaryExpr op (distributeDisjunction expr1) (distributeDisjunction expr2)
 
 ------------------------------------------------------------------------------
 -- Interpreter
 ------------------------------------------------------------------------------
 
-operate_binary :: BinaryOp -> Bool -> Bool -> Bool
-operate_binary And a b = a && b
-operate_binary Or a b = a || b
+operateBinary :: BinaryOp -> Bool -> Bool -> Bool
+operateBinary And = (&&)
+operateBinary Or = (||)
 
-operate_unary :: UnaryOp -> Bool -> Bool
-operate_unary Not a = not a
+operateUnary :: UnaryOp -> Bool -> Bool
+operateUnary Not = not
 
 solve :: Expression Bool -> Bool
 solve (Leaf b) = b
-solve (UnaryExpr operation  a) = operate_unary operation (solve a)
-solve (BinaryExpr operation a b) = operate_binary operation (solve a) (solve b)
+solve (UnaryExpr operation  a) = operateUnary operation (solve a)
+solve (BinaryExpr operation a b) = operateBinary operation (solve a) (solve b)
 
 ------------------------------------------------------------------------------
 -- Main
