@@ -140,9 +140,22 @@ isCNF :: Expression a -> Bool
 isCNF (Leaf _) = True
 isCNF (UnaryExpr Not (Leaf _))          = True
 isCNF (UnaryExpr Not _)                 = False
+isCNF (BinaryExpr Or expr1 expr2) = isCNF' expr1 expr2
 isCNF (BinaryExpr Or (Leaf _) (Leaf _)) = True
 isCNF (BinaryExpr Or _ _)               = False
 isCNF (BinaryExpr And expr1 expr2)      = isCNF expr1 && isCNF expr2
+
+isCNF' :: Expression a -> Expression a -> Bool
+isCNF' expr1 expr2 = case expr1 of
+                        (Leaf _) -> isNotOrLeaf expr2
+                        (UnaryExpr Not _) -> isNotOrLeaf expr2
+                        _ -> False
+
+isNotOrLeaf :: Expression a -> Bool
+isNotOrLeaf (Leaf _)          = True
+isNotOrLeaf (UnaryExpr Not _) = True
+isNotOrLeaf _                 = False
+
 
 cnf :: Expression a -> Expression a
 cnf = until isCNF distributeDisjunction . nnf
@@ -151,9 +164,22 @@ distributeDisjunction :: Expression a -> Expression a
 distributeDisjunction t@(Leaf _)                            = t
 distributeDisjunction t@(UnaryExpr _ _)                     = t
 distributeDisjunction t@(BinaryExpr Or (Leaf _) (Leaf _))   = t
-distributeDisjunction (BinaryExpr Or l@(Leaf _) (BinaryExpr And expr1 expr2)) = BinaryExpr And (BinaryExpr Or l expr1) (BinaryExpr Or l expr2)
-distributeDisjunction (BinaryExpr Or (BinaryExpr And expr1 expr2) l@(Leaf _)) = BinaryExpr And (BinaryExpr Or l expr1) (BinaryExpr Or l expr2)
-distributeDisjunction (BinaryExpr op expr1 expr2)           = BinaryExpr op (distributeDisjunction expr1) (distributeDisjunction expr2)
+distributeDisjunction t@(BinaryExpr Or exprToDistr (BinaryExpr And expr1 expr2)) 
+    = distributeDisjunction' exprToDistr expr1 expr2
+distributeDisjunction t@(BinaryExpr Or (BinaryExpr And expr1 expr2) exprToDistr) 
+    = distributeDisjunction' exprToDistr expr1 expr2
+distributeDisjunction t@(BinaryExpr op expr1 expr2)
+    = BinaryExpr op (distributeDisjunction expr1) (distributeDisjunction expr2)
+
+distributeDisjunction' :: Expression a -> Expression a -> Expression a -> Expression a
+distributeDisjunction' exprToDistr expr1 expr2
+    = if isNotOrLeaf exprToDistr
+      then BinaryExpr And (BinaryExpr Or exprToDistr expr1) (BinaryExpr Or exprToDistr expr2)
+      else BinaryExpr And left right
+        where left  = distributeDisjunction (BinaryExpr Or exprToDistr expr1)
+              right = distributeDisjunction (BinaryExpr Or exprToDistr expr2)
+
+
 
 ------------------------------------------------------------------------------
 -- Interpreter
