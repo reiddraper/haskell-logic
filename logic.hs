@@ -10,13 +10,13 @@ import Test.QuickCheck
 -- Data declarations
 ------------------------------------------------------------------------------
 
-data UnaryOp = Not
-data BinaryOp = And | Or
+data UnaryOp = Not deriving (Eq)
+data BinaryOp = And | Or deriving (Eq)
 newtype Variable = Var Char deriving (Eq, Ord)
 
 data Expression a = Leaf a
                     | UnaryExpr UnaryOp (Expression a)
-                    | BinaryExpr BinaryOp (Expression a) (Expression a)
+                    | BinaryExpr BinaryOp (Expression a) (Expression a) deriving (Eq)
 
 instance Show UnaryOp where
     show _ = "not"
@@ -140,9 +140,14 @@ isCNF :: Expression a -> Bool
 isCNF (Leaf _) = True
 isCNF (UnaryExpr Not (Leaf _))          = True
 isCNF (UnaryExpr Not _)                 = False
-isCNF (BinaryExpr Or (Leaf _) (Leaf _)) = True
-isCNF (BinaryExpr Or _ _)               = False
+isCNF (BinaryExpr Or expr1 expr2)       = isNotAnd expr1 && isNotAnd expr2
 isCNF (BinaryExpr And expr1 expr2)      = isCNF expr1 && isCNF expr2
+
+isNotAnd :: Expression a -> Bool
+isNotAnd (Leaf _)                       = True
+isNotAnd (UnaryExpr Not expr)           = isNotAnd expr
+isNotAnd (BinaryExpr Or expr1 expr2)    = isNotAnd expr1 && isNotAnd expr2
+isNotAnd _                              = False
 
 cnf :: Expression a -> Expression a
 cnf = until isCNF distributeDisjunction . nnf
