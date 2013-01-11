@@ -190,6 +190,43 @@ solve (UnaryExpr operation  a) = operateUnary operation (solve a)
 solve (BinaryExpr operation a b) = operateBinary operation (solve a) (solve b)
 
 ------------------------------------------------------------------------------
+-- QC Properties
+------------------------------------------------------------------------------
+
+propNNFEquiv e = equivalent e (nnf e)
+
+propCNFEquiv e = equivalent e (cnf e)
+
+propCNFIsNNF e = isNNF (cnf e)
+
+propNNFisNNF e = isNNF (nnf e)
+
+propCNFisCNF e = isCNF (cnf e)
+
+-- idempotency
+
+propNNFIdempotent e = (nnf . nnf) e == nnf e
+
+propCNFIdempotent e = (cnf . cnf) e == cnf e
+
+-- Running helpers
+
+ar ::  Args
+ar = stdArgs {maxSuccess = 100}
+
+propWithAr ::  (Expression Variable -> Bool) -> IO ()
+propWithAr = quickCheckWith ar
+
+runProps ::  IO ()
+runProps = propWithAr propNNFEquiv
+           >> propWithAr propCNFEquiv
+           >> propWithAr propCNFIsNNF
+           >> propWithAr propNNFisNNF
+           >> propWithAr propCNFisCNF
+           >> propWithAr propNNFIdempotent
+           >> propWithAr propCNFIdempotent
+
+------------------------------------------------------------------------------
 -- Main
 ------------------------------------------------------------------------------
 
