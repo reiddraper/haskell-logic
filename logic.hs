@@ -1,5 +1,5 @@
-module Logic where
-import Control.Monad (replicateM, liftM, liftM2, liftM3)
+module Main where
+import Control.Monad (replicateM, sequence, liftM, liftM2, liftM3)
 import Data.Monoid
 import Data.Foldable (Foldable, foldMap)
 import qualified Data.Map as Map
@@ -217,14 +217,17 @@ ar = stdArgs {maxSuccess = 100}
 propWithAr ::  (Expression Variable -> Bool) -> IO ()
 propWithAr = quickCheckWith ar
 
-runProps ::  IO ()
-runProps = propWithAr propNNFEquiv
-           >> propWithAr propCNFEquiv
-           >> propWithAr propCNFIsNNF
-           >> propWithAr propNNFisNNF
-           >> propWithAr propCNFisCNF
-           >> propWithAr propNNFIdempotent
-           >> propWithAr propCNFIdempotent
+props :: [IO ()]
+props = map propWithAr [propNNFEquiv,
+                        propCNFEquiv,
+                        propCNFIsNNF,
+                        propNNFisNNF,
+                        propCNFisCNF,
+                        propNNFIdempotent,
+                        propCNFIdempotent]
+
+runProps :: IO [()]
+runProps = sequence props
 
 ------------------------------------------------------------------------------
 -- Main
@@ -242,5 +245,5 @@ ex3 = BinaryExpr And ex1 ex2
 ex :: VarExpr
 ex = UnaryExpr Not ex3
 
-main :: IO ()
-main = print $ truthTable ex
+main :: IO [()]
+main = runProps
