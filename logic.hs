@@ -18,6 +18,22 @@ data Expression a = Leaf a
                     | UnaryExpr UnaryOp (Expression a)
                     | BinaryExpr BinaryOp (Expression a) (Expression a) deriving (Eq)
 
+------------------------------------------------------------------------------
+-- Constructor Helpers
+
+-- to cut down on line noise
+
+var x = Leaf (Var x)
+
+uExprNot = UnaryExpr Not
+
+bExprOr = BinaryExpr Or
+
+bExprAnd = BinaryExpr And
+
+------------------------------------------------------------------------------
+-- Instances
+
 instance Show UnaryOp where
     show _ = "not"
 
@@ -130,7 +146,8 @@ removeDoubleNegation (BinaryExpr op expr1 expr2) = BinaryExpr op (removeDoubleNe
 
 deMorgan :: Expression a -> Expression a
 deMorgan l@(Leaf _) = l
-deMorgan (UnaryExpr Not (BinaryExpr op expr1 expr2)) = BinaryExpr (oppositeBinary op) (deMorgan (UnaryExpr Not expr1)) (deMorgan (UnaryExpr Not expr2))
+deMorgan (UnaryExpr Not (BinaryExpr op expr1 expr2))
+    = BinaryExpr (oppositeBinary op) (deMorgan (uExprNot expr1)) (deMorgan (uExprNot expr2))
 deMorgan (UnaryExpr Not expr) = UnaryExpr Not (deMorgan expr)
 deMorgan (BinaryExpr op expr1 expr2) = BinaryExpr op (deMorgan expr1) (deMorgan expr2)
 
@@ -166,12 +183,13 @@ distributeDisjunction (BinaryExpr op expr1 expr2)
 distributeDisjunction' :: Expression a -> Expression a -> Expression a -> Expression a
 distributeDisjunction' exprToDistr expr1 expr2
     = if isNotAnd exprToDistr
-      then BinaryExpr And (BinaryExpr Or exprToDistr expr1) (BinaryExpr Or exprToDistr expr2)
-      else BinaryExpr And left right
-        where left  = distributeDisjunction (BinaryExpr Or exprToDistr expr1)
-              right = distributeDisjunction (BinaryExpr Or exprToDistr expr2)
+      then distributeAndLeaf exprToDistr expr1 expr2
+      else bExprAnd left right
+        where left  = distributeDisjunction $ bExprOr exprToDistr expr1
+              right = distributeDisjunction $ bExprOr exprToDistr expr2
 
-
+distributeAndLeaf dist expr1 expr2
+    = bExprAnd (bExprOr dist expr1) (bExprOr dist expr2)
 
 ------------------------------------------------------------------------------
 -- Interpreter
@@ -212,7 +230,7 @@ propCNFIdempotent e = (cnf . cnf) e == cnf e
 -- Running helpers
 
 ar ::  Args
-ar = stdArgs {maxSuccess = 100}
+ar = stdArgs {maxSuccess = 1000}
 
 propWithAr ::  (Expression Variable -> Bool) -> IO ()
 propWithAr = quickCheckWith ar
@@ -234,16 +252,16 @@ runProps = sequence props
 ------------------------------------------------------------------------------
 
 ex1 :: VarExpr
-ex1 = BinaryExpr Or (Leaf (Var 'A')) (UnaryExpr Not (Leaf (Var 'B')))
+ex1 = bExprAnd (var 'A') (uExprNot (var 'B'))
 
 ex2 :: VarExpr
-ex2 = BinaryExpr And (Leaf (Var 'A')) (Leaf (Var 'B'))
+ex2 = bExprAnd (var 'A') (var 'B')
 
 ex3 :: VarExpr
-ex3 = BinaryExpr And ex1 ex2
+ex3 = bExprAnd ex1 ex2
 
 ex :: VarExpr
-ex = UnaryExpr Not ex3
+ex = uExprNot ex3
 
 main :: IO [()]
 main = runProps
