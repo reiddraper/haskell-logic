@@ -105,10 +105,10 @@ truthTable :: VarExpr -> [Bool]
 truthTable expr = map (solveWithMapping expr) $ mappings expr
 
 solveWithMapping :: VarExpr -> Mapping -> Bool
-solveWithMapping expr mapping = solve (replace expr mapping)
+solveWithMapping = (solve .) . replace
 
 solveWithMappings :: VarExpr -> [Mapping] -> [Bool]
-solveWithMappings expr = map (solveWithMapping expr)
+solveWithMappings = map . solveWithMapping
 
 replace :: VarExpr -> Mapping -> Expression Bool
 replace (Leaf v) m = Leaf (Map.findWithDefault True v m)
