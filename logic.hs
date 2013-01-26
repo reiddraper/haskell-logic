@@ -230,7 +230,7 @@ propCNFIdempotent e = (cnf . cnf) e == cnf e
 -- Running helpers
 
 ar ::  Args
-ar = stdArgs {maxSuccess = 1000}
+ar = stdArgs {maxSuccess = 100}
 
 propWithAr ::  (Expression Variable -> Bool) -> IO ()
 propWithAr = quickCheckWith ar
