@@ -191,6 +191,46 @@ distributeDisjunction' exprToDistr expr1 expr2
 distributeAndLeaf dist expr1 expr2
     = bExprAnd (bExprOr dist expr1) (bExprOr dist expr2)
 
+-- Disjunctive Normal Form
+
+isDNF :: Expression a -> Bool
+isDNF (Leaf _) = True
+isDNF (UnaryExpr Not (Leaf _))          = True
+isDNF (UnaryExpr Not _)                 = False
+isDNF (BinaryExpr And expr1 expr2)      = isNotOr expr1 && isNotOr expr2
+isDNF (BinaryExpr Or expr1 expr2)       = isDNF expr1 && isDNF expr2
+
+isNotOr :: Expression a -> Bool
+isNotOr (Leaf _)                        = True
+isNotOr (UnaryExpr Not expr)            = isNotOr expr
+isNotOr (BinaryExpr And expr1 expr2)    = isNotOr expr1 && isNotOr expr2
+isNotOr _                               = False
+
+dnf :: Expression a -> Expression a
+dnf = until isDNF distributeConjunction . nnf
+
+distributeConjunction :: Expression a -> Expression a
+distributeConjunction t@(Leaf _)                            = t
+distributeConjunction t@(UnaryExpr _ _)                     = t
+distributeConjunction t@(BinaryExpr And (Leaf _) (Leaf _))  = t
+distributeConjunction (BinaryExpr And exprToDistr (BinaryExpr Or expr1 expr2))
+    = distributeConjunction' exprToDistr expr1 expr2
+distributeConjunction (BinaryExpr And (BinaryExpr Or expr1 expr2) exprToDistr)
+    = distributeConjunction' exprToDistr expr1 expr2
+distributeConjunction (BinaryExpr op expr1 expr2)
+    = BinaryExpr op (distributeConjunction expr1) (distributeConjunction expr2)
+
+distributeConjunction' :: Expression a -> Expression a -> Expression a -> Expression a
+distributeConjunction' exprToDistr expr1 expr2
+    = if isNotOr exprToDistr
+      then distributeOrLeaf exprToDistr expr1 expr2
+      else bExprOr left right
+        where left  = distributeConjunction $ bExprAnd exprToDistr expr1
+              right = distributeConjunction $ bExprAnd exprToDistr expr2
+
+distributeOrLeaf dist expr1 expr2
+    = bExprOr (bExprAnd dist expr1) (bExprAnd dist expr2)
+
 ------------------------------------------------------------------------------
 -- Interpreter
 ------------------------------------------------------------------------------
@@ -211,21 +251,33 @@ solve (BinaryExpr operation a b) = operateBinary operation (solve a) (solve b)
 -- QC Properties
 ------------------------------------------------------------------------------
 
+-- equivalence
+
 propNNFEquiv e = equivalent e (nnf e)
 
 propCNFEquiv e = equivalent e (cnf e)
 
-propCNFIsNNF e = isNNF (cnf e)
+propDNFEquiv e = equivalent e (dnf e)
+
+-- correctness
 
 propNNFisNNF e = isNNF (nnf e)
 
+propCNFIsNNF e = isNNF (cnf e)
+
+propDNFIsNNF e = isNNF (dnf e)
+
 propCNFisCNF e = isCNF (cnf e)
+
+propDNFisDNF e = isDNF (dnf e)
 
 -- idempotency
 
 propNNFIdempotent e = (nnf . nnf) e == nnf e
 
 propCNFIdempotent e = (cnf . cnf) e == cnf e
+
+propDNFIdempotent e = (dnf . dnf) e == dnf e
 
 -- Running helpers
 
@@ -238,9 +290,12 @@ propWithAr = quickCheckWith ar
 props :: [IO ()]
 props = map propWithAr [propNNFEquiv,
                         propCNFEquiv,
+                        propDNFEquiv,
                         propCNFIsNNF,
+                        propDNFIsNNF,
                         propNNFisNNF,
                         propCNFisCNF,
+                        propDNFisDNF,
                         propNNFIdempotent,
                         propCNFIdempotent]
 
