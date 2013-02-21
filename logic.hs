@@ -1,7 +1,10 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+
 module Main where
 import Control.Monad (replicateM, sequence, liftM, liftM2, liftM3)
 import Data.Monoid
 import Data.Foldable (Foldable, foldMap)
+import Data.Data (Data, Typeable)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Test.QuickCheck
@@ -10,13 +13,13 @@ import Test.QuickCheck
 -- Data declarations
 ------------------------------------------------------------------------------
 
-data UnaryOp = Not deriving (Eq)
-data BinaryOp = And | Or deriving (Eq)
-newtype Variable = Var Char deriving (Eq, Ord)
+data UnaryOp = Not deriving (Eq, Data, Typeable)
+data BinaryOp = And | Or deriving (Eq, Data, Typeable)
+newtype Variable = Var Char deriving (Eq, Ord, Data, Typeable)
 
 data Expression a = Leaf a
                     | UnaryExpr UnaryOp (Expression a)
-                    | BinaryExpr BinaryOp (Expression a) (Expression a) deriving (Eq)
+                    | BinaryExpr BinaryOp (Expression a) (Expression a) deriving (Eq, Data, Typeable)
 
 ------------------------------------------------------------------------------
 -- Constructor Helpers
@@ -299,8 +302,8 @@ props = map propWithAr [propNNFEquiv,
                         propNNFIdempotent,
                         propCNFIdempotent]
 
-runProps :: IO [()]
-runProps = sequence props
+runProps :: IO ()
+runProps = sequence_ props
 
 ------------------------------------------------------------------------------
 -- Main
@@ -318,5 +321,5 @@ ex3 = bExprAnd ex1 ex2
 ex :: VarExpr
 ex = uExprNot ex3
 
-main :: IO [()]
+main :: IO ()
 main = runProps
