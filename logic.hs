@@ -17,9 +17,10 @@ data UnaryOp = Not deriving (Eq, Data, Typeable)
 data BinaryOp = And | Or deriving (Eq, Data, Typeable)
 newtype Variable = Var Char deriving (Eq, Ord, Data, Typeable)
 
-data Expression a = Leaf a
-                    | UnaryExpr UnaryOp (Expression a)
-                    | BinaryExpr BinaryOp (Expression a) (Expression a) deriving (Eq, Data, Typeable)
+data Expression a
+    = Leaf a
+    | UnaryExpr UnaryOp (Expression a)
+    | BinaryExpr BinaryOp (Expression a) (Expression a) deriving (Eq, Data, Typeable)
 
 ------------------------------------------------------------------------------
 -- Constructor Helpers
@@ -64,12 +65,26 @@ instance Foldable Expression where
 
 instance Arbitrary UnaryOp where
     arbitrary = return Not
+    shrink _  = []
 
 instance Arbitrary BinaryOp where
-    arbitrary = oneof [return And, return Or]
+    arbitrary = oneof [return Or, return And]
+
+    shrink Or = []
+    shrink And = [Or]
 
 instance Arbitrary a => Arbitrary (Expression a) where
     arbitrary = sized expro
+
+    shrink (Leaf a)             = map Leaf $ shrink a
+    shrink (UnaryExpr op a)     = [UnaryExpr op a' | a' <- shrink a] ++
+                                  [UnaryExpr op' a' | op' <- shrink op
+                                                    , a' <- a:shrink a]
+    shrink (BinaryExpr op a b)  = [BinaryExpr op a' b' | a'  <- shrink a
+                                                       , b'  <- shrink b] ++
+                                  [BinaryExpr op' a' b' | op' <- shrink op
+                                                        , a' <- a:shrink a
+                                                        , b' <- b:shrink b]
 
 
 expro :: Arbitrary a => Int -> Gen (Expression a)
@@ -80,8 +95,20 @@ expro n = oneof [liftM2 UnaryExpr arbitrary (subexpro n),
 subexpro :: Arbitrary a => Int -> Gen (Expression a)
 subexpro n = expro (n `div` 2)
 
+-- Really a `[Char]`, but String syntax is easier on the
+-- eyes.
+variableLetters :: String
+variableLetters = "abcde"
+
 instance Arbitrary Variable where
-    arbitrary = liftM Var $ choose ('\97', '\101')
+    arbitrary = liftM Var $ elements variableLetters
+
+    shrink (Var 'a') = map Var []
+    shrink (Var 'b') = map Var "a"
+    shrink (Var 'c') = map Var "ab"
+    shrink (Var 'd') = map Var "abc"
+    shrink (Var 'e') = map Var "abcd"
+    shrink _         = []
 
 type Mapping = Map.Map Variable Bool
 type VarExpr = Expression Variable
