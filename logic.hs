@@ -20,7 +20,8 @@ newtype Variable = Var Char deriving (Eq, Ord, Data, Typeable)
 data Expression a
     = Leaf a
     | UnaryExpr UnaryOp (Expression a)
-    | BinaryExpr BinaryOp (Expression a) (Expression a) deriving (Eq, Data, Typeable)
+    | BinaryExpr BinaryOp (Expression a) (Expression a)
+    deriving (Eq, Data, Typeable)
 
 ------------------------------------------------------------------------------
 -- Constructor Helpers
@@ -61,7 +62,8 @@ instance Show a => Show (Expression a) where
 instance Foldable Expression where
     foldMap f (Leaf v) = f v
     foldMap f (UnaryExpr _ expr) = foldMap f expr
-    foldMap f (BinaryExpr _ expr1 expr2) = foldMap f expr1 `mappend` foldMap f expr2
+    foldMap f (BinaryExpr _ expr1 expr2) = foldMap f expr1 `mappend`
+                                           foldMap f expr2
 
 instance Arbitrary UnaryOp where
     arbitrary = return Not
@@ -147,7 +149,8 @@ solveWithMappings = map . solveWithMapping
 replace :: VarExpr -> Mapping -> Expression Bool
 replace (Leaf v) m = Leaf (Map.findWithDefault True v m)
 replace (UnaryExpr op expr) m = UnaryExpr op (replace expr m)
-replace (BinaryExpr op expr1 expr2) m = BinaryExpr op (replace expr1 m) (replace expr2 m)
+replace (BinaryExpr op expr1 expr2) m = BinaryExpr op (replace expr1 m)
+                                                      (replace expr2 m)
 
 mappings :: VarExpr -> [Mapping]
 mappings expr = let vs = Set.toList $ variables expr
