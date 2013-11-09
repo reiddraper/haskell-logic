@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
 module Main where
-import Control.Monad (replicateM, sequence, liftM, liftM2, liftM3)
+import Control.Monad (replicateM, liftM, liftM2, liftM3)
 import Data.Monoid
 import Data.Foldable (Foldable, foldMap)
 import Data.Data (Data, Typeable)
@@ -26,12 +26,16 @@ data Expression a = Leaf a
 
 -- to cut down on line noise
 
+var :: Char -> VarExpr
 var x = Leaf (Var x)
 
+uExprNot :: Expression a -> Expression a
 uExprNot = UnaryExpr Not
 
+bExprOr :: Expression a -> Expression a -> Expression a
 bExprOr = BinaryExpr Or
 
+bExprAnd :: Expression a -> Expression a -> Expression a
 bExprAnd = BinaryExpr And
 
 ------------------------------------------------------------------------------
@@ -191,6 +195,7 @@ distributeDisjunction' exprToDistr expr1 expr2
         where left  = distributeDisjunction $ bExprOr exprToDistr expr1
               right = distributeDisjunction $ bExprOr exprToDistr expr2
 
+distributeAndLeaf :: Expression a -> Expression a -> Expression a -> Expression a
 distributeAndLeaf dist expr1 expr2
     = bExprAnd (bExprOr dist expr1) (bExprOr dist expr2)
 
@@ -231,6 +236,7 @@ distributeConjunction' exprToDistr expr1 expr2
         where left  = distributeConjunction $ bExprAnd exprToDistr expr1
               right = distributeConjunction $ bExprAnd exprToDistr expr2
 
+distributeOrLeaf :: Expression a -> Expression a -> Expression a -> Expression a
 distributeOrLeaf dist expr1 expr2
     = bExprOr (bExprAnd dist expr1) (bExprAnd dist expr2)
 
@@ -254,32 +260,45 @@ solve (BinaryExpr operation a b) = operateBinary operation (solve a) (solve b)
 -- QC Properties
 ------------------------------------------------------------------------------
 
+type ExprProp = VarExpr -> Bool
+
 -- equivalence
 
+propNNFEquiv :: ExprProp
 propNNFEquiv e = equivalent e (nnf e)
 
+propCNFEquiv :: ExprProp
 propCNFEquiv e = equivalent e (cnf e)
 
+propDNFEquiv :: ExprProp
 propDNFEquiv e = equivalent e (dnf e)
 
 -- correctness
 
+propNNFisNNF :: ExprProp
 propNNFisNNF e = isNNF (nnf e)
 
+propCNFIsNNF :: ExprProp
 propCNFIsNNF e = isNNF (cnf e)
 
+propDNFIsNNF :: ExprProp
 propDNFIsNNF e = isNNF (dnf e)
 
+propCNFisCNF :: ExprProp
 propCNFisCNF e = isCNF (cnf e)
 
+propDNFisDNF :: ExprProp
 propDNFisDNF e = isDNF (dnf e)
 
 -- idempotency
 
+propNNFIdempotent :: ExprProp
 propNNFIdempotent e = (nnf . nnf) e == nnf e
 
+propCNFIdempotent :: ExprProp
 propCNFIdempotent e = (cnf . cnf) e == cnf e
 
+propDNFIdempotent :: ExprProp
 propDNFIdempotent e = (dnf . dnf) e == dnf e
 
 -- Running helpers
