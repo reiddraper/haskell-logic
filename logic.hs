@@ -1,12 +1,15 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
 module Main where
-import Control.Monad (replicateM, liftM, liftM2, liftM3)
+import Control.Monad (replicateM, liftM, liftM2, liftM3, mplus)
 import Data.Monoid
 import Data.Foldable (Foldable, foldMap)
 import Data.Data (Data, Typeable)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+
+import Data.Generics.Uniplate.Data
+
 import Test.QuickCheck
 
 ------------------------------------------------------------------------------
@@ -166,109 +169,74 @@ variables = foldMap Set.singleton
 
 -- Negation Normal Form
 
-isNNF :: Expression a -> Bool
-isNNF (Leaf _) = True
-isNNF (UnaryExpr Not (Leaf _))          = True
-isNNF (UnaryExpr Not _)                 = False
-isNNF (BinaryExpr _ expr1 expr2)        = isNNF expr1 && isNNF expr2
+isNNF :: (Data a, Typeable a) => Expression a -> Bool
+isNNF = all doubleNegation . universe
+    where doubleNegation (UnaryExpr Not (Leaf _))   = True
+          doubleNegation (UnaryExpr Not _)          = False
+          doubleNegation _                          = True
 
-nnf :: Expression a -> Expression a
-nnf = until isNNF (deMorgan . removeDoubleNegation)
+nnf :: (Data a, Typeable a) => Expression a -> Expression a
+nnf = rewrite (\e -> deMorgan e `mplus` removeDoubleNegation e)
 
-removeDoubleNegation :: Expression a -> Expression a
-removeDoubleNegation l@(Leaf _) = l
-removeDoubleNegation (UnaryExpr Not (UnaryExpr Not expr)) = removeDoubleNegation expr
-removeDoubleNegation (UnaryExpr op expr) = UnaryExpr op (removeDoubleNegation expr)
-removeDoubleNegation (BinaryExpr op expr1 expr2) = BinaryExpr op (removeDoubleNegation expr1) (removeDoubleNegation expr2)
+removeDoubleNegation :: (Typeable a, Data a) => Expression a -> Maybe (Expression a)
+removeDoubleNegation (UnaryExpr Not (UnaryExpr Not a)) = Just a
+removeDoubleNegation _ = Nothing
 
-deMorgan :: Expression a -> Expression a
-deMorgan l@(Leaf _) = l
-deMorgan (UnaryExpr Not (BinaryExpr op expr1 expr2))
-    = BinaryExpr (oppositeBinary op) (deMorgan (uExprNot expr1)) (deMorgan (uExprNot expr2))
-deMorgan (UnaryExpr Not expr) = UnaryExpr Not (deMorgan expr)
-deMorgan (BinaryExpr op expr1 expr2) = BinaryExpr op (deMorgan expr1) (deMorgan expr2)
+deMorgan :: (Data a, Typeable a) => Expression a -> Maybe (Expression a)
+deMorgan (UnaryExpr Not (BinaryExpr op a b)) = Just $ BinaryExpr (oppositeBinary op) (uExprNot a) (uExprNot b)
+deMorgan _ = Nothing
 
 -- Conjunctive Normal Form
 
-isCNF :: Expression a -> Bool
-isCNF (Leaf _) = True
-isCNF (UnaryExpr Not (Leaf _))          = True
-isCNF (UnaryExpr Not _)                 = False
-isCNF (BinaryExpr Or expr1 expr2)       = isNotAnd expr1 && isNotAnd expr2
-isCNF (BinaryExpr And expr1 expr2)      = isCNF expr1 && isCNF expr2
+isCNF :: (Data a, Typeable a) => Expression a -> Bool
+isCNF = all cnf' . universe
+    where cnf' (UnaryExpr Not (Leaf _)) = True
+          cnf' (UnaryExpr Not _)        = False
+          cnf' (BinaryExpr Or a b)      = isNotAnd a && isNotAnd b
+          cnf' _                        = True
 
-isNotAnd :: Expression a -> Bool
-isNotAnd (Leaf _)                       = True
-isNotAnd (UnaryExpr Not expr)           = isNotAnd expr
-isNotAnd (BinaryExpr Or expr1 expr2)    = isNotAnd expr1 && isNotAnd expr2
-isNotAnd _                              = False
+isNotAnd :: (Data a, Typeable a) => Expression a -> Bool
+isNotAnd a = null [() | BinaryExpr And _ _ <- universe a]
 
-cnf :: Expression a -> Expression a
-cnf = until isCNF distributeDisjunction . nnf
+cnf :: (Data a, Typeable a) => Expression a -> Expression a
+cnf = rewrite distributeDisjunction . nnf
 
-distributeDisjunction :: Expression a -> Expression a
-distributeDisjunction t@(Leaf _)                            = t
-distributeDisjunction t@(UnaryExpr _ _)                     = t
-distributeDisjunction t@(BinaryExpr Or (Leaf _) (Leaf _))   = t
+distributeDisjunction :: (Data a, Typeable a) => Expression a -> Maybe (Expression a)
 distributeDisjunction (BinaryExpr Or exprToDistr (BinaryExpr And expr1 expr2))
     = distributeDisjunction' exprToDistr expr1 expr2
 distributeDisjunction (BinaryExpr Or (BinaryExpr And expr1 expr2) exprToDistr)
     = distributeDisjunction' exprToDistr expr1 expr2
-distributeDisjunction (BinaryExpr op expr1 expr2)
-    = BinaryExpr op (distributeDisjunction expr1) (distributeDisjunction expr2)
+distributeDisjunction _ = Nothing
 
-distributeDisjunction' :: Expression a -> Expression a -> Expression a -> Expression a
+distributeDisjunction' :: (Data a, Typeable a) => Expression a -> Expression a -> Expression a -> Maybe (Expression a)
 distributeDisjunction' exprToDistr expr1 expr2
-    = if isNotAnd exprToDistr
-      then distributeAndLeaf exprToDistr expr1 expr2
-      else bExprAnd left right
-        where left  = distributeDisjunction $ bExprOr exprToDistr expr1
-              right = distributeDisjunction $ bExprOr exprToDistr expr2
-
-distributeAndLeaf :: Expression a -> Expression a -> Expression a -> Expression a
-distributeAndLeaf dist expr1 expr2
-    = bExprAnd (bExprOr dist expr1) (bExprOr dist expr2)
+    = Just $ bExprAnd (bExprOr expr1 exprToDistr) (bExprOr expr2 exprToDistr)
 
 -- Disjunctive Normal Form
 
-isDNF :: Expression a -> Bool
-isDNF (Leaf _) = True
-isDNF (UnaryExpr Not (Leaf _))          = True
-isDNF (UnaryExpr Not _)                 = False
-isDNF (BinaryExpr And expr1 expr2)      = isNotOr expr1 && isNotOr expr2
-isDNF (BinaryExpr Or expr1 expr2)       = isDNF expr1 && isDNF expr2
+isDNF :: (Data a, Typeable a) => Expression a -> Bool
+isDNF = all dnf' . universe
+    where dnf' (UnaryExpr Not (Leaf _)) = True
+          dnf' (UnaryExpr Not _)        = False
+          dnf' (BinaryExpr And a b)     = isNotOr a && isNotOr b
+          dnf' _                        = True
 
-isNotOr :: Expression a -> Bool
-isNotOr (Leaf _)                        = True
-isNotOr (UnaryExpr Not expr)            = isNotOr expr
-isNotOr (BinaryExpr And expr1 expr2)    = isNotOr expr1 && isNotOr expr2
-isNotOr _                               = False
+isNotOr :: (Data a, Typeable a) => Expression a -> Bool
+isNotOr a = null [() | BinaryExpr Or _ _ <- universe a]
 
-dnf :: Expression a -> Expression a
-dnf = until isDNF distributeConjunction . nnf
+dnf :: (Data a, Typeable a) => Expression a -> Expression a
+dnf = rewrite distributeConjunction . nnf
 
-distributeConjunction :: Expression a -> Expression a
-distributeConjunction t@(Leaf _)                            = t
-distributeConjunction t@(UnaryExpr _ _)                     = t
-distributeConjunction t@(BinaryExpr And (Leaf _) (Leaf _))  = t
+distributeConjunction :: (Data a, Typeable a) => Expression a -> Maybe (Expression a)
 distributeConjunction (BinaryExpr And exprToDistr (BinaryExpr Or expr1 expr2))
     = distributeConjunction' exprToDistr expr1 expr2
 distributeConjunction (BinaryExpr And (BinaryExpr Or expr1 expr2) exprToDistr)
     = distributeConjunction' exprToDistr expr1 expr2
-distributeConjunction (BinaryExpr op expr1 expr2)
-    = BinaryExpr op (distributeConjunction expr1) (distributeConjunction expr2)
+distributeConjunction _ = Nothing
 
-distributeConjunction' :: Expression a -> Expression a -> Expression a -> Expression a
+distributeConjunction' :: (Data a, Typeable a) => Expression a -> Expression a -> Expression a -> Maybe (Expression a)
 distributeConjunction' exprToDistr expr1 expr2
-    = if isNotOr exprToDistr
-      then distributeOrLeaf exprToDistr expr1 expr2
-      else bExprOr left right
-        where left  = distributeConjunction $ bExprAnd exprToDistr expr1
-              right = distributeConjunction $ bExprAnd exprToDistr expr2
-
-distributeOrLeaf :: Expression a -> Expression a -> Expression a -> Expression a
-distributeOrLeaf dist expr1 expr2
-    = bExprOr (bExprAnd dist expr1) (bExprAnd dist expr2)
+    = Just $ bExprOr (bExprAnd expr1 exprToDistr) (bExprAnd expr2 exprToDistr)
 
 ------------------------------------------------------------------------------
 -- Interpreter
