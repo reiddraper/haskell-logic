@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
 module Main where
+
+import Control.Applicative (pure, (<$>), (<*>))
 import Control.Monad (replicateM, liftM, liftM2, liftM3, mplus)
 import Data.Monoid
 import Data.Foldable (Foldable, foldMap)
@@ -8,7 +10,8 @@ import Data.Data (Data, Typeable)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-import Data.Generics.Uniplate.Data
+import Control.Lens (Plated(..))
+import Control.Lens.Plated (rewrite, universe)
 
 import Test.QuickCheck
 
@@ -67,6 +70,11 @@ instance Foldable Expression where
     foldMap f (UnaryExpr _ expr) = foldMap f expr
     foldMap f (BinaryExpr _ expr1 expr2) = foldMap f expr1 `mappend`
                                            foldMap f expr2
+
+instance Plated (Expression a) where
+    plate _ (Leaf l)                    = pure $ Leaf l
+    plate f (UnaryExpr op expr)         = UnaryExpr op <$> f expr
+    plate f (BinaryExpr op expr1 expr2) = BinaryExpr op <$> f expr1 <*> f expr2
 
 instance Arbitrary UnaryOp where
     arbitrary = return Not
@@ -302,7 +310,7 @@ propDNFIdempotent e = (dnf . dnf) e == dnf e
 -- Running helpers
 
 ar ::  Args
-ar = stdArgs {maxSuccess = 100}
+ar = stdArgs {maxSuccess = 512}
 
 propWithAr ::  (Expression Variable -> Bool) -> IO ()
 propWithAr = quickCheckWith ar
